@@ -1,15 +1,15 @@
 # Phase 1: Project Scaffolding and User Authentication
 
-**Visible result:** User can register, log in, log out, and view their profile in the browser.
+**Visible result:** User can register with an email, username, and password, then log in, log out, and view their profile in the browser. Email is the unique login identifier. Username is a display name that can be changed later.
 
 ---
 
 ## What This Phase Delivers
 
 - Docker Compose running FastAPI + PostgreSQL.
-- A `users` table with email, hashed password, and self-assessment fields.
-- REST endpoints for register, login, token refresh, get current user, and update profile.
-- A React frontend with login, register, and profile pages.
+- A `users` table with email, username, hashed password, and self-assessment fields.
+- REST endpoints for register, login, token refresh, get current user, update profile, and change password.
+- A React frontend with login, registration ("Tell us about you" onboarding), and profile pages.
 - JWT-based auth that survives page refreshes via refresh tokens stored in httpOnly cookies.
 
 ---
@@ -68,7 +68,8 @@ AsyncSessionLocal = async_sessionmaker(engine, class_=AsyncSession, expire_on_co
 | Column | Type | Notes |
 |--------|------|-------|
 | `id` | UUID | Primary key, auto-generated via `uuid.uuid4()` |
-| `email` | VARCHAR(255) | Unique, indexed |
+| `email` | VARCHAR(255) | Unique, indexed. Used for login. |
+| `username` | VARCHAR(50) | Indexed. Editable display name used in chat. Not required to be unique. |
 | `password_hash` | VARCHAR(255) | Bcrypt hash |
 | `programming_level` | INTEGER | 1 to 5, default 3 |
 | `maths_level` | INTEGER | 1 to 5, default 3 |
@@ -80,10 +81,11 @@ The `Base` class declared here is imported by all other models and by `init_db.p
 
 **`backend/app/schemas/user.py`** contains Pydantic v2 models:
 
-- `UserCreate`: email (validated via `EmailStr`), password (minimum 8 characters), programming_level (optional, default 3, range 1 to 5), maths_level (optional, default 3, range 1 to 5).
+- `UserCreate`: email (validated via `EmailStr`), username (str, 3 to 50 characters), password (minimum 8 characters), programming_level (optional, default 3, range 1 to 5), maths_level (optional, default 3, range 1 to 5).
 - `UserLogin`: email, password.
-- `UserProfile`: id, email, programming_level, maths_level, created_at. Uses `from_attributes = True` to map directly from ORM objects.
-- `UserAssessment`: programming_level (range 1 to 5), maths_level (range 1 to 5). Used for the `PUT /api/auth/me` endpoint.
+- `UserProfile`: id, email, username, programming_level, maths_level, created_at. Uses `from_attributes = True` to map directly from ORM objects.
+- `UserProfileUpdate`: username (optional str), programming_level (optional, range 1 to 5), maths_level (optional, range 1 to 5). Used for the `PUT /api/auth/me` endpoint.
+- `ChangePassword`: current_password (str), new_password (str, minimum 8 characters).
 - `TokenResponse`: access_token, token_type (defaults to `"bearer"`).
 
 ### 6. Auth service
@@ -123,12 +125,13 @@ A helper function `set_refresh_cookie(response, refresh_token)` sets the refresh
 
 | Endpoint | Method | What it does |
 |----------|--------|-------------|
-| `/api/auth/register` | POST | Validates input, checks email uniqueness, hashes password, creates user, returns access token in body and sets refresh token cookie |
-| `/api/auth/login` | POST | Validates credentials, returns access token in body and sets refresh token cookie |
-| `/api/auth/refresh` | POST | Reads refresh token from cookie, validates it, verifies user still exists, generates a new access token, rotates the refresh token (issues a new one and sets a new cookie), returns new access token |
-| `/api/auth/logout` | POST | Deletes the refresh token cookie |
-| `/api/auth/me` | GET | Returns the current user's profile (requires Bearer token) |
-| `/api/auth/me` | PUT | Updates programming_level and maths_level (requires Bearer token) |
+| `/api/auth/register` | POST | Validates input. Checks email uniqueness (returns 400 "Email already registered" if duplicate). Hashes password, creates user, returns access token in body and sets refresh token cookie. |
+| `/api/auth/login` | POST | Accepts email and password. Validates credentials, returns access token in body and sets refresh token cookie. |
+| `/api/auth/refresh` | POST | Reads refresh token from cookie, validates it, verifies user still exists, generates a new access token, rotates the refresh token (issues a new one and sets a new cookie), returns new access token. |
+| `/api/auth/logout` | POST | Deletes the refresh token cookie. |
+| `/api/auth/me` | GET | Returns the current user's profile (requires Bearer token). |
+| `/api/auth/me` | PUT | Updates username, programming_level, and maths_level (requires Bearer token). |
+| `/api/auth/me/password` | PUT | Changes the user's password. Requires current_password and new_password. Verifies current password before updating. |
 
 The refresh token cookie is never exposed to JavaScript. The session survives page refreshes because the browser automatically sends the cookie, and `AuthContext` calls `/api/auth/refresh` on mount.
 
@@ -180,7 +183,7 @@ This project uses **Tailwind CSS v4**, which does not require a separate `tailwi
 | File | Purpose |
 |------|---------|
 | `frontend/vite.config.ts` | Vite config with React and Tailwind v4 plugins, API proxy to `localhost:8000`, WebSocket proxy, and `@` path alias |
-| `frontend/src/index.css` | Single line: `@import "tailwindcss"` (Tailwind v4 syntax) |
+| `frontend/src/index.css` | Tailwind import and custom theme colours matching the project logo |
 | `frontend/src/main.tsx` | React entry point. Wraps `<App />` in `BrowserRouter` and `AuthProvider` |
 | `frontend/src/App.tsx` | React Router setup with four routes (see Section 18) |
 
@@ -194,36 +197,49 @@ This project uses **Tailwind CSS v4**, which does not require a separate `tailwi
 - Includes `credentials: "include"` on all requests so the browser sends httpOnly cookies.
 - On a 401 response (except for auth endpoints), automatically calls `/api/auth/refresh`. If the refresh succeeds, retries the original request with the new token. If it fails, redirects to `/login`.
 - Handles empty response bodies gracefully (e.g. the logout endpoint).
+- Exports `getAccessToken()` so the WebSocket helper (Phase 2) can pass the token as a query parameter.
 
-**`frontend/src/api/types.ts`**: TypeScript interfaces matching the backend schemas: `User`, `TokenResponse`, `LoginCredentials`, `RegisterData`, `UserAssessment`.
+**`frontend/src/api/types.ts`**: TypeScript interfaces matching the backend schemas: `User` (with email and username), `TokenResponse`, `LoginCredentials` (email + password), `RegisterData` (email + username + password + levels), `UserProfileUpdate`, `ChangePasswordData`.
 
 ### 14. Auth context
 
 **`frontend/src/auth/AuthContext.tsx`**:
 
-React context providing: `user`, `login()`, `register()`, `logout()`, `updateProfile()`, `isLoading`.
+React context providing: `user`, `login()`, `register()`, `logout()`, `updateProfile()`, `changePassword()`, `isLoading`.
 
 - On mount, calls `/api/auth/refresh` to restore the session. If successful, stores the access token in memory and fetches the user profile via `GET /api/auth/me`. If it fails, the user remains logged out.
-- `login()` sends credentials to `/api/auth/login`, stores the access token, and fetches the user profile.
+- `login()` sends credentials (email + password) to `/api/auth/login`, stores the access token, and fetches the user profile.
 - `register()` sends data to `/api/auth/register`, stores the access token, and fetches the user profile.
 - `logout()` calls `/api/auth/logout`, then clears the in-memory token and user state.
-- `updateProfile()` sends updated skill levels to `PUT /api/auth/me` and updates the local user state.
+- `updateProfile()` sends updated username and skill levels to `PUT /api/auth/me` and updates the local user state.
+- `changePassword()` sends current and new password to `PUT /api/auth/me/password`.
 
 ### 15. Auth pages
 
-**`frontend/src/auth/LoginPage.tsx`**: Form with email and password fields. Calls `login()` from context. Redirects to `/profile` on success. Displays error messages in a red alert box. Submit button is disabled while the request is in progress.
+**`frontend/src/auth/LoginPage.tsx`**: Form with email and password fields. Calls `login()` from context. Redirects to `/chat` on success. Displays error messages in a red alert box. Submit button is disabled while the request is in progress.
 
-**`frontend/src/auth/RegisterPage.tsx`**: Form with email, password, confirm password, and two range sliders for programming level (1 to 5) and maths level (1 to 5, labelled Beginner to Expert). Validates that the two passwords match and that the password is at least 8 characters before submitting. Calls `register()`. Redirects to `/profile` on success.
+**`frontend/src/auth/RegisterPage.tsx`**: An onboarding-style registration page titled "Tell us about you". The form contains:
+
+1. An email field.
+2. A username field (3 to 50 characters).
+3. A password field and a confirm password field.
+4. A "What best describes you?" section with two range sliders:
+   - Programming level (1 to 5, labelled Beginner to Expert).
+   - Mathematics level (1 to 5, labelled Beginner to Expert).
+
+Validates that the two passwords match and that the password is at least 8 characters before submitting. On email conflict (400 response), displays "Email already registered." Calls `register()`. Redirects to `/chat` on success.
 
 **`frontend/src/auth/ProtectedRoute.tsx`**: Wraps routes that require authentication. Shows a `LoadingSpinner` while the session check is in progress. If the user is not logged in, redirects to `/login` and preserves the original location so the user can be sent back after logging in.
 
 ### 16. Profile page
 
-**`frontend/src/profile/ProfilePage.tsx`**: Displays the user's email (read-only) and "Member since" date. Provides range sliders for programming_level and maths_level. Calls `updateProfile()` on submit. Shows a green success message or a red error message after saving.
+**`frontend/src/profile/ProfilePage.tsx`**: Displays the user's email (read-only) and "Member since" date. Provides an editable username field. Provides range sliders for programming_level and maths_level (labelled Beginner to Expert). Includes a "Change Password" link that navigates to a separate page. Shows a daily usage progress bar. Calls `updateProfile()` on form submission. Shows a green success message or a red error message after saving.
+
+**`frontend/src/profile/ChangePasswordPage.tsx`**: A standalone page at `/change-password`. Contains fields for current password, new password, and confirm new password. Validates that the two new passwords match and the new password is at least 8 characters. Calls `changePassword()` from the auth context. Shows success or error messages. Includes a link back to the profile page.
 
 ### 17. Shared components
 
-**`frontend/src/components/Navbar.tsx`**: Top bar with the brand text "Guided Cursor: AI Coding Tutor" (teal colour, links to `/`). When logged in, shows disabled placeholder items for Chat ("Coming in Phase 2") and Modules ("Coming in Phase 3"), a Profile link, and a Logout button. When logged out, shows Login and Register links.
+**`frontend/src/components/Navbar.tsx`**: Top bar with the brand text "Guided Cursor: AI Coding Tutor" (uses the project's brand colour). When logged in, shows disabled placeholder items for Chat ("Coming in Phase 2") and Modules ("Coming in Phase 3"), a Profile link, and a Logout button. When logged out, shows Login and Register links.
 
 **`frontend/src/components/LoadingSpinner.tsx`**: A simple CSS spinner using Tailwind's `animate-spin` utility. Used by `ProtectedRoute` during session restoration.
 
@@ -235,8 +251,10 @@ React context providing: `user`, `login()`, `register()`, `logout()`, `updatePro
 |------|-----------|---------------|
 | `/login` | `LoginPage` | No |
 | `/register` | `RegisterPage` | No |
+| `/chat` | `ChatPage` (wrapped in `ProtectedRoute`) | Yes |
 | `/profile` | `ProfilePage` (wrapped in `ProtectedRoute`) | Yes |
-| `/` | Redirects to `/profile` | No (redirect handles auth) |
+| `/change-password` | `ChangePasswordPage` (wrapped in `ProtectedRoute`) | Yes |
+| `/` | Redirects to `/chat` | No (redirect handles auth) |
 
 ---
 
@@ -244,13 +262,16 @@ React context providing: `user`, `login()`, `register()`, `logout()`, `updatePro
 
 - [ ] `docker-compose up` starts the backend and database without errors.
 - [ ] `GET /health` returns `{"status": "healthy"}`.
-- [ ] `POST /api/auth/register` creates a user, returns an access token, and sets a refresh cookie.
-- [ ] `POST /api/auth/login` returns an access token and sets a refresh cookie.
-- [ ] `GET /api/auth/me` returns the user profile with a valid Bearer token.
-- [ ] `PUT /api/auth/me` updates skill levels and returns the updated profile.
+- [ ] `POST /api/auth/register` creates a user with email and username, returns an access token, and sets a refresh cookie.
+- [ ] Registering with a duplicate email returns 400 with "Email already registered".
+- [ ] `POST /api/auth/login` accepts email and password, returns an access token and sets a refresh cookie.
+- [ ] `GET /api/auth/me` returns the user profile with both email and username.
+- [ ] `PUT /api/auth/me` updates username and skill levels. Returns the updated profile.
+- [ ] `PUT /api/auth/me/password` changes the password after verifying the current password.
 - [ ] `POST /api/auth/refresh` returns a new access token and rotates the refresh cookie.
-- [ ] Frontend register form creates an account and redirects to the profile page.
-- [ ] Frontend login form authenticates and redirects to the profile page.
+- [ ] Frontend register page shows "Tell us about you" heading with email, username, password, and skill level sliders.
+- [ ] Frontend login page accepts email and password.
 - [ ] Refreshing the page does not log the user out (refresh token works).
 - [ ] Clicking logout clears the session; protected pages redirect to login.
-- [ ] Profile page displays user info and allows updating skill levels.
+- [ ] Profile page displays the email (read-only), editable username, skill levels, daily usage, and a "Change Password" link.
+- [ ] The Change Password page allows updating the password after verifying the current one.

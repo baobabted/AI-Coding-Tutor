@@ -11,7 +11,7 @@ echo.
 
 :: 1. Start database + backend via docker-compose
 echo  [1/4] Starting database and backend...
-start "Guided Cursor - Backend" cmd /c "docker-compose up db backend"
+start "Guided Cursor - Backend" cmd /c "docker-compose up --build db backend"
 
 :: 2. Wait for backend health check
 echo  [2/4] Waiting for backend to be ready...
@@ -40,11 +40,29 @@ echo.
 
 :: 3. Start frontend dev server
 echo  [3/4] Starting frontend...
-start "Guided Cursor - Frontend" cmd /c "cd /d "%~dp0frontend" && npm install && npm run dev"
+start "Guided Cursor - Frontend" /d "%~dp0frontend" cmd /c "npm install && npm run dev"
 
 :: 4. Wait for Vite to start, then open browser
 echo  [4/4] Waiting for frontend to start...
-timeout /t 6 /nobreak >nul
+set FATTEMPTS=0
+
+:frontend_loop
+set /a FATTEMPTS+=1
+if %FATTEMPTS% gtr %MAX_ATTEMPTS% (
+    echo.
+    echo  ERROR: Frontend did not start within 60 seconds.
+    echo  Check the Frontend window for errors.
+    pause
+    exit /b 1
+)
+timeout /t 2 /nobreak >nul
+curl -s -o nul -w "%%{http_code}" http://localhost:5173 | findstr "200" >nul 2>&1
+if errorlevel 1 (
+    <nul set /p "=."
+    goto frontend_loop
+)
+echo.
+echo  Frontend is ready!
 start http://localhost:5173
 
 echo.

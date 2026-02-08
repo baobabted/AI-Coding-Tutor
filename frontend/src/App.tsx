@@ -3,16 +3,26 @@ import { LoginPage } from "./auth/LoginPage";
 import { RegisterPage } from "./auth/RegisterPage";
 import { ProtectedRoute } from "./auth/ProtectedRoute";
 import { ProfilePage } from "./profile/ProfilePage";
+import { ChangePasswordPage } from "./profile/ChangePasswordPage";
+import { ChatPage } from "./chat/ChatPage";
 import { Navbar } from "./components/Navbar";
 
 export default function App() {
   return (
-    <div className="min-h-screen bg-gray-100">
+    <div className="h-screen flex flex-col overflow-hidden bg-gray-100">
       <Navbar />
-      <main className="container mx-auto px-4 py-8">
+      <main className="flex-1 min-h-0 overflow-hidden">
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
+          <Route
+            path="/chat"
+            element={
+              <ProtectedRoute>
+                <ChatPage />
+              </ProtectedRoute>
+            }
+          />
           <Route
             path="/profile"
             element={
@@ -21,7 +31,15 @@ export default function App() {
               </ProtectedRoute>
             }
           />
-          <Route path="/" element={<Navigate to="/profile" replace />} />
+          <Route
+            path="/change-password"
+            element={
+              <ProtectedRoute>
+                <ChangePasswordPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route path="/" element={<Navigate to="/chat" replace />} />
         </Routes>
       </main>
     </div>

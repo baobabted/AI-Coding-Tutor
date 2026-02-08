@@ -4,6 +4,7 @@ import { useAuth } from "./AuthContext";
 
 export function RegisterPage() {
   const [email, setEmail] = useState("");
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [programmingLevel, setProgrammingLevel] = useState(3);
@@ -32,11 +33,12 @@ export function RegisterPage() {
     try {
       await register({
         email,
+        username,
         password,
         programming_level: programmingLevel,
         maths_level: mathsLevel,
       });
-      navigate("/profile");
+      navigate("/chat");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Registration failed");
     } finally {
@@ -44,10 +46,17 @@ export function RegisterPage() {
     }
   };
 
+  const levelLabels = ["Beginner", "Elementary", "Intermediate", "Advanced", "Expert"];
+
   return (
-    <div className="max-w-md mx-auto">
+    <div className="max-w-lg mx-auto">
       <div className="bg-white rounded-lg shadow-md p-8">
-        <h1 className="text-2xl font-bold text-center mb-6">Register</h1>
+        <h1 className="text-2xl font-bold text-center text-brand mb-2">
+          Tell us about you
+        </h1>
+        <p className="text-center text-gray-500 mb-6">
+          Create your account and set your skill levels
+        </p>
 
         {error && (
           <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
@@ -68,8 +77,27 @@ export function RegisterPage() {
               id="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-accent"
               required
+            />
+          </div>
+
+          <div>
+            <label
+              htmlFor="username"
+              className="block text-sm font-medium text-gray-700 mb-1"
+            >
+              Username
+            </label>
+            <input
+              type="text"
+              id="username"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-accent"
+              required
+              minLength={3}
+              maxLength={50}
             />
           </div>
 
@@ -85,7 +113,7 @@ export function RegisterPage() {
               id="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-accent"
               required
               minLength={8}
             />
@@ -103,7 +131,7 @@ export function RegisterPage() {
               id="confirmPassword"
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-accent"
               required
             />
           </div>
@@ -113,7 +141,7 @@ export function RegisterPage() {
               htmlFor="programmingLevel"
               className="block text-sm font-medium text-gray-700 mb-1"
             >
-              Programming Level: {programmingLevel}
+              Programming Level: {levelLabels[programmingLevel - 1]}
             </label>
             <input
               type="range"
@@ -122,7 +150,7 @@ export function RegisterPage() {
               max="5"
               value={programmingLevel}
               onChange={(e) => setProgrammingLevel(parseInt(e.target.value))}
-              className="w-full"
+              className="w-full accent-accent"
             />
             <div className="flex justify-between text-xs text-gray-500">
               <span>Beginner</span>
@@ -135,7 +163,7 @@ export function RegisterPage() {
               htmlFor="mathsLevel"
               className="block text-sm font-medium text-gray-700 mb-1"
             >
-              Mathematics Level: {mathsLevel}
+              Mathematics Level: {levelLabels[mathsLevel - 1]}
             </label>
             <input
               type="range"
@@ -144,7 +172,7 @@ export function RegisterPage() {
               max="5"
               value={mathsLevel}
               onChange={(e) => setMathsLevel(parseInt(e.target.value))}
-              className="w-full"
+              className="w-full accent-accent"
             />
             <div className="flex justify-between text-xs text-gray-500">
               <span>Beginner</span>
@@ -155,15 +183,15 @@ export function RegisterPage() {
           <button
             type="submit"
             disabled={isSubmitting}
-            className="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+            className="w-full bg-brand text-white py-2 px-4 rounded-md hover:bg-brand-light focus:outline-none focus:ring-2 focus:ring-accent disabled:opacity-50"
           >
-            {isSubmitting ? "Registering..." : "Register"}
+            {isSubmitting ? "Creating account..." : "Create Account"}
           </button>
         </form>
 
         <p className="mt-4 text-center text-sm text-gray-600">
           Already have an account?{" "}
-          <Link to="/login" className="text-blue-600 hover:underline">
+          <Link to="/login" className="text-accent-dark hover:underline">
             Login
           </Link>
         </p>

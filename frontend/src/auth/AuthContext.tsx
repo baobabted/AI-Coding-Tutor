@@ -5,7 +5,13 @@ import {
   useEffect,
   ReactNode,
 } from "react";
-import { User, LoginCredentials, RegisterData } from "../api/types";
+import {
+  User,
+  LoginCredentials,
+  RegisterData,
+  ProfileUpdateData,
+  ChangePasswordData,
+} from "../api/types";
 import { apiFetch, setAccessToken } from "../api/http";
 
 interface AuthContextType {
@@ -14,10 +20,8 @@ interface AuthContextType {
   login: (credentials: LoginCredentials) => Promise<void>;
   register: (data: RegisterData) => Promise<void>;
   logout: () => Promise<void>;
-  updateProfile: (data: {
-    programming_level: number;
-    maths_level: number;
-  }) => Promise<void>;
+  updateProfile: (data: ProfileUpdateData) => Promise<void>;
+  changePassword: (data: ChangePasswordData) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -76,10 +80,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
   };
 
-  const updateProfile = async (data: {
-    programming_level: number;
-    maths_level: number;
-  }) => {
+  const updateProfile = async (data: ProfileUpdateData) => {
     const updatedUser = await apiFetch<User>("/api/auth/me", {
       method: "PUT",
       body: JSON.stringify(data),
@@ -87,9 +88,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(updatedUser);
   };
 
+  const changePassword = async (data: ChangePasswordData) => {
+    await apiFetch<{ message: string }>("/api/auth/me/password", {
+      method: "PUT",
+      body: JSON.stringify(data),
+    });
+  };
+
   return (
     <AuthContext.Provider
-      value={{ user, isLoading, login, register, logout, updateProfile }}
+      value={{ user, isLoading, login, register, logout, updateProfile, changePassword }}
     >
       {children}
     </AuthContext.Provider>

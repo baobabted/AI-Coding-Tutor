@@ -2,7 +2,8 @@ from app.schemas.user import (
     UserCreate,
     UserLogin,
     UserProfile,
-    UserAssessment,
+    UserProfileUpdate,
+    ChangePassword,
     TokenResponse,
 )
 
@@ -10,6 +11,7 @@ __all__ = [
     "UserCreate",
     "UserLogin",
     "UserProfile",
-    "UserAssessment",
+    "UserProfileUpdate",
+    "ChangePassword",
     "TokenResponse",
 ]

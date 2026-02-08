@@ -10,7 +10,8 @@ from app.schemas.user import (
     UserCreate,
     UserLogin,
     UserProfile,
-    UserAssessment,
+    UserProfileUpdate,
+    ChangePassword,
     TokenResponse,
 )
 from app.services.auth_service import (
@@ -46,8 +47,7 @@ async def register(
     """Register a new user and return tokens."""
     # Check if email already exists
     result = await db.execute(select(User).where(User.email == user_data.email))
-    existing_user = result.scalar_one_or_none()
-    if existing_user:
+    if result.scalar_one_or_none():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Email already registered",
@@ -56,6 +56,7 @@ async def register(
     # Create user
     user = User(
         email=user_data.email,
+        username=user_data.username,
         password_hash=hash_password(user_data.password),
         programming_level=user_data.programming_level,
         maths_level=user_data.maths_level,
@@ -81,7 +82,6 @@ async def login(
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     """Authenticate user and return tokens."""
-    # Find user by email
     result = await db.execute(select(User).where(User.email == credentials.email))
     user = result.scalar_one_or_none()
     if not user or not verify_password(credentials.password, user.password_hash):
@@ -90,11 +90,8 @@ async def login(
             detail="Invalid email or password",
         )
 
-    # Generate tokens
     access_token = create_access_token(str(user.id))
     refresh_token = create_refresh_token(str(user.id))
-
-    # Set refresh token cookie
     set_refresh_cookie(response, refresh_token)
 
     return TokenResponse(access_token=access_token)
@@ -128,7 +125,6 @@ async def refresh(
             detail="Invalid or expired refresh token",
         )
 
-    # Verify user still exists
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
     if not user:
@@ -137,10 +133,7 @@ async def refresh(
             detail="User not found",
         )
 
-    # Generate new access token
     access_token = create_access_token(str(user.id))
-
-    # Optionally rotate refresh token
     new_refresh_token = create_refresh_token(str(user.id))
     set_refresh_cookie(response, new_refresh_token)
 
@@ -162,13 +155,37 @@ async def get_me(current_user: Annotated[User, Depends(get_current_user)]):
 
 @router.put("/me", response_model=UserProfile)
 async def update_me(
-    assessment: UserAssessment,
+    update_data: UserProfileUpdate,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    """Update the current user's self-assessment levels."""
-    current_user.programming_level = assessment.programming_level
-    current_user.maths_level = assessment.maths_level
+    """Update the current user's profile (username, skill levels)."""
+    if update_data.username is not None:
+        current_user.username = update_data.username
+
+    if update_data.programming_level is not None:
+        current_user.programming_level = update_data.programming_level
+    if update_data.maths_level is not None:
+        current_user.maths_level = update_data.maths_level
+
     await db.commit()
     await db.refresh(current_user)
     return current_user
+
+
+@router.put("/me/password")
+async def change_password(
+    password_data: ChangePassword,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Change the current user's password."""
+    if not verify_password(password_data.current_password, current_user.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Current password is incorrect",
+        )
+
+    current_user.password_hash = hash_password(password_data.new_password)
+    await db.commit()
+    return {"message": "Password updated successfully"}
