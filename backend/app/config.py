@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     # Embedding settings (Phase 2)
     embedding_provider: str = "cohere"
     cohere_api_key: str = ""
-    voyage_ai_key: str = ""
+    voyageai_api_key: str = ""
 
     # Token limits (Phase 2)
     llm_max_context_tokens: int = 10000

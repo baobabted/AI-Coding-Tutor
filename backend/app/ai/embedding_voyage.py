@@ -20,7 +20,7 @@ Response:
   }
 
 Authentication:
-  Bearer token via the VOYAGE_AI_KEY environment variable.
+  Bearer token via the VOYAGEAI_API_KEY environment variable.
 """
 
 import logging

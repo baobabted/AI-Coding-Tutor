@@ -11,7 +11,7 @@
 - Production Docker images for frontend and backend.
 - A production Docker Compose file orchestrating all services.
 - Nginx reverse proxy with HTTPS and WebSocket support.
-- Environment variable validation on startup.
+- Optional start-up environment variable validation guidance.
 - A CI/CD pipeline via GitHub Actions.
 - Automated database backups.
 
@@ -167,7 +167,7 @@ services:
       GOOGLE_API_KEY: ${GOOGLE_API_KEY}
       EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER}
       COHERE_API_KEY: ${COHERE_API_KEY}
-      VOYAGE_AI_KEY: ${VOYAGE_AI_KEY}
+      VOYAGEAI_API_KEY: ${VOYAGEAI_API_KEY}
       CORS_ORIGINS: '["https://yourdomain.com"]'
       ADMIN_API_KEY: ${ADMIN_API_KEY}
     restart: always
@@ -202,18 +202,20 @@ volumes:
 
 All sensitive values are read from the `.env` file. The backend health check uses the actual endpoint at `/api/health/ai`.
 
+Current development startup differs slightly: `start.bat` uses `/health` for backend readiness, then runs `python app/ai/verify_keys.py` as a separate verification step before opening the frontend.
+
 ---
 
-## 4. Environment Variable Validation
+## 4. Optional Environment Variable Validation
 
-In `backend/app/config.py`, add startup validation that runs when the `Settings` object is created:
+If you want stricter production checks, add start-up validation in `backend/app/config.py` when the `Settings` object is created:
 
 - If `JWT_SECRET_KEY` is the default placeholder or shorter than 32 characters, raise an error immediately.
 - If `DATABASE_URL` is not set, raise an error.
 - If `LLM_PROVIDER` is set but the corresponding API key is empty, log a warning. If no LLM keys are configured at all, raise an error.
-- If neither `COHERE_API_KEY` nor `VOYAGE_AI_KEY` is set, log a warning (embeddings will not work, but the application can still start for testing).
+- If neither `COHERE_API_KEY` nor `VOYAGEAI_API_KEY` is set, log a warning (embeddings will not work, but the application can still start for testing).
 
-This "fail fast" approach prevents deploying a misconfigured application that would only reveal problems on the first user request.
+This "fail fast" approach is a recommended hardening step for production deployments.
 
 ---
 

@@ -36,7 +36,7 @@ async def _get_services(llm: LLMProvider) -> tuple[EmbeddingService, PedagogyEng
         _embedding_service = EmbeddingService(
             provider=settings.embedding_provider,
             cohere_api_key=settings.cohere_api_key,
-            voyage_api_key=settings.voyage_ai_key,
+            voyage_api_key=settings.voyageai_api_key,
         )
         await _embedding_service.initialize()
     if _pedagogy_engine is None or _pedagogy_engine.llm is not llm:

@@ -210,7 +210,7 @@ class EmbeddingService:
 - **Single embed per message.** The user message is embedded exactly once. All subsequent checks (greeting, off-topic, same-problem) operate on the pre-computed vector using synchronous methods with no additional API calls.
 - **Persistent HTTP client.** A shared `httpx.AsyncClient` reuses TCP connections across requests, reducing connection overhead.
 - **In-memory LRU cache.** Up to 512 recent embeddings are cached by normalised text key, avoiding redundant API calls for repeated or similar inputs.
-- **Batch initialisation.** Greeting templates and topic anchors are embedded in a single batch API call on startup, rather than individual requests.
+- **Batch initialisation.** Greeting templates and topic anchors are embedded in one batch call when the embedding service is first initialised, rather than individual requests.
 - **NumPy vectorised similarity.** Anchor embeddings are stored as NumPy `ndarray` matrices. Cosine similarity against all anchors is computed via a single matrix-vector multiply (`matrix @ vec / (norms * vec_norm)`) instead of N individual dot products.
 
 ### 2.2 Greeting Detection
@@ -265,7 +265,7 @@ All classification decisions are based purely on semantic similarity, with no ar
 
 3. **Neither matches → new problem.** The hint level resets. The effective student level is updated based on performance on the previous problem (see Section 1.3).
 
-**Elaboration anchors (25 phrases, 8 categories):** not understanding, request more detail, step-by-step, examples, hints/answers, clarification, continuation, and simple interrogatives. These are pre-embedded at startup alongside the greeting and topic anchors.
+**Elaboration anchors (25 phrases, 8 categories):** not understanding, request more detail, step-by-step, examples, hints/answers, clarification, continuation, and simple interrogatives. These are embedded in the same initialisation batch as the greeting and topic anchors.
 
 For the first message in a session, there is no previous embedding, so it is always treated as a new problem.
 

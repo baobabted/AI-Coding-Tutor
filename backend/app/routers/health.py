@@ -13,6 +13,7 @@ async def ai_health_check():
         settings.anthropic_api_key,
         settings.openai_api_key,
         settings.google_api_key,
-        settings.voyage_ai_key,
+        settings.cohere_api_key,
+        settings.voyageai_api_key,
     )
     return results

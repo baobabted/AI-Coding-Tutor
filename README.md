@@ -13,14 +13,14 @@
 
 ## Development Status
 
-| Phase | Milestone | Status | Guide |
-|-------|-----------|--------|-------|
-| 1 | Auth System | Complete | [docs/phase-1-auth.md](docs/phase-1-auth.md) |
-| 2A | AI Chat and Pedagogy Engine | Complete | [docs/phase-2-chat.md](docs/phase-2-chat.md) |
-| 2B | File and Image Uploads | Planned | [docs/phase-2-chat.md](docs/phase-2-chat.md) (Section 5) |
-| 3 | Learning Modules and Workspace | Planned | [docs/phase-3-workspace.md](docs/phase-3-workspace.md) |
-| 4 | Testing, Hardening, and Cost Control | Planned | [docs/phase-4-robustness.md](docs/phase-4-robustness.md) |
-| 5 | Production Deployment | Planned | [docs/phase-5-deployment.md](docs/phase-5-deployment.md) |
+| Phase | Milestone                            | Status   | Guide                                                 |
+| ----- | ------------------------------------ | -------- | ----------------------------------------------------- |
+| 1     | Auth System                          | Complete | [docs/phase-1-auth.md](docs/phase-1-auth.md)             |
+| 2A    | AI Chat and Pedagogy Engine          | Complete | [docs/phase-2-chat.md](docs/phase-2-chat.md)             |
+| 2B    | File and Image Uploads               | Planned  | [docs/phase-2-chat.md](docs/phase-2-chat.md) (Section 5) |
+| 3     | Learning Modules and Workspace       | Planned  | [docs/phase-3-workspace.md](docs/phase-3-workspace.md)   |
+| 4     | Testing, Hardening, and Cost Control | Planned  | [docs/phase-4-robustness.md](docs/phase-4-robustness.md) |
+| 5     | Production Deployment                | Planned  | [docs/phase-5-deployment.md](docs/phase-5-deployment.md) |
 
 Additional reference: [docs/semantic-recognition-testing.md](docs/semantic-recognition-testing.md) records the calibration data for the embedding-based pre-filters.
 
@@ -56,15 +56,15 @@ The learning modules (Phase 3) will cover four core topics from the **UCL PHAS00
 
 ## Tech Stack
 
-| Layer | Tools |
-|-------|-------|
-| Frontend | React 18, TypeScript (strict), Vite, Tailwind CSS v4 |
-| Backend | FastAPI, Uvicorn, SQLAlchemy 2.0 (async), Alembic, Pydantic v2 |
-| Auth | python-jose (JWT), passlib + bcrypt |
-| AI | Anthropic Claude, Google Gemini, OpenAI GPT (configurable with failover) |
-| Embeddings | Cohere embed-v4.0 (primary), Voyage AI voyage-multimodal-3.5 (fallback) |
-| Database | PostgreSQL 15 with asyncpg |
-| DevOps | Docker, Docker Compose |
+| Layer      | Tools                                                                    |
+| ---------- | ------------------------------------------------------------------------ |
+| Frontend   | React 18, TypeScript (strict), Vite, Tailwind CSS v4                     |
+| Backend    | FastAPI, Uvicorn, SQLAlchemy 2.0 (async), Alembic, Pydantic v2           |
+| Auth       | python-jose (JWT), passlib + bcrypt                                      |
+| AI         | Anthropic Claude, Google Gemini, OpenAI GPT (configurable with failover) |
+| Embeddings | Cohere embed-v4.0 (primary), Voyage AI voyage-multimodal-3.5 (fallback)  |
+| Database   | PostgreSQL 15 with asyncpg                                               |
+| DevOps     | Docker, Docker Compose                                                   |
 
 ## Architecture
 
@@ -117,13 +117,13 @@ Edit `.env` and set:
 
 - A strong `JWT_SECRET_KEY` (at least 32 random characters).
 - Your LLM API key for the chosen provider (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, or `GOOGLE_API_KEY`).
-- Your embedding API key (`COHERE_API_KEY` and/or `VOYAGE_AI_KEY`).
+- Your embedding API key (`COHERE_API_KEY` or `VOYAGEAI_API_KEY`).
 - `LLM_PROVIDER` to your preferred provider (`anthropic`, `openai`, or `google`).
 
 3. Start the database and backend:
 
 ```bash
-docker-compose up
+docker compose up db backend
 ```
 
 4. In a second terminal, start the frontend:
@@ -138,7 +138,16 @@ npm run dev
 
 ### One-Click Start (Windows)
 
-Double-click `start.bat` in the project root. It starts the database, backend, and frontend automatically, then opens your browser.
+Double-click `start.bat` in the project root. The script:
+
+- checks Docker engine availability first (15-second timeout);
+- starts database and backend containers;
+- waits for `http://localhost:8000/health`;
+- runs `python app/ai/verify_keys.py` in the backend container;
+- starts the frontend only if at least one LLM provider passes verification; and
+- opens your browser and keeps the startup window open for logs.
+
+If startup fails, the script prints container status and recent backend/database logs before exiting.
 
 ## Key Design Decisions
 

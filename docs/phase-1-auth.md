@@ -69,7 +69,7 @@ AsyncSessionLocal = async_sessionmaker(engine, class_=AsyncSession, expire_on_co
 |--------|------|-------|
 | `id` | UUID | Primary key, auto-generated via `uuid.uuid4()` |
 | `email` | VARCHAR(255) | Unique, indexed. Used for login. |
-| `username` | VARCHAR(50) | Indexed. Editable display name used in chat. Not required to be unique. |
+| `username` | VARCHAR(50) | Unique, indexed. Editable display name used in chat. |
 | `password_hash` | VARCHAR(255) | Bcrypt hash |
 | `programming_level` | INTEGER | 1 to 5, default 3 |
 | `maths_level` | INTEGER | 1 to 5, default 3 |
@@ -141,7 +141,7 @@ The refresh token cookie is never exposed to JavaScript. The session survives pa
 
 - Creates the FastAPI app with a `lifespan` async context manager. On startup it calls `init_db(engine)` to create tables. On shutdown it calls `engine.dispose()` to close the database connection pool.
 - Configures CORS middleware with origins from settings and `allow_credentials=True`.
-- Includes the auth router.
+- Includes routers required by the current implementation.
 - Provides a `GET /health` endpoint that returns `{"status": "healthy"}` for readiness checks.
 
 ### 10. Alembic migration
@@ -163,6 +163,8 @@ During development, `init_db()` handles table creation on startup, so this step 
 - `backend` service: Builds from `backend/Dockerfile`, depends on `db` (waits for healthy status), loads `.env` file, mounts `./backend:/app` for live code reloading, runs Uvicorn with `--reload` on port 8000.
 
 **`.env.example`** (project root): Template with all required environment variables including `DATABASE_URL`, `JWT_SECRET_KEY`, `CORS_ORIGINS`, and LLM API keys.
+
+**`start.bat`** (project root): Windows one-click startup script. It checks Docker engine connectivity (15-second timeout), starts `db` and `backend`, waits for `/health`, verifies API keys via `python app/ai/verify_keys.py` in the backend container, then starts the frontend only when at least one LLM provider is available. If a check fails, it prints diagnostics and recent logs.
 
 ---
 
@@ -260,7 +262,7 @@ Validates that the two passwords match and that the password is at least 8 chara
 
 ## Verification Checklist
 
-- [ ] `docker-compose up` starts the backend and database without errors.
+- [ ] `docker compose up db backend` starts the backend and database without errors.
 - [ ] `GET /health` returns `{"status": "healthy"}`.
 - [ ] `POST /api/auth/register` creates a user with email and username, returns an access token, and sets a refresh cookie.
 - [ ] Registering with a duplicate email returns 400 with "Email already registered".

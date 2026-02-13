@@ -10,25 +10,14 @@ from app.routers.auth import router as auth_router
 from app.routers.chat import router as chat_router
 from app.routers.health import router as health_router
 
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Handle startup and shutdown events."""
-    # Startup: initialize database tables
+    # Create tables on startup for local development.
     await init_db(engine)
 
-    # Pre-initialise embedding service if an embedding key is configured
-    if settings.cohere_api_key or settings.voyage_ai_key:
-        from app.ai.embedding_service import EmbeddingService
-        embedding_svc = EmbeddingService(
-            provider=settings.embedding_provider,
-            cohere_api_key=settings.cohere_api_key,
-            voyage_api_key=settings.voyage_ai_key,
-        )
-        await embedding_svc.initialize()
-
     yield
-    # Shutdown: dispose of engine
+    # Close DB connections on shutdown.
     await engine.dispose()
 
 
