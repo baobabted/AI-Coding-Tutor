@@ -18,20 +18,12 @@
 | 1     | Auth System                          | Complete | [docs/phase-1-auth.md](docs/phase-1-auth.md)             |
 | 2A    | AI Chat and Pedagogy Engine          | Complete | [docs/phase-2-chat.md](docs/phase-2-chat.md)             |
 | 2B    | File and Image Uploads               | Complete | [docs/phase-2-chat.md](docs/phase-2-chat.md) (Section 5) |
-| 3     | Learning Modules and Workspace       | Planned  | [docs/phase-3-workspace.md](docs/phase-3-workspace.md)   |
+| 3A    | Personal Notebook Workspace          | Planned  | [docs/phase-3-workspace.md](docs/phase-3-workspace.md) (Part A) |
+| 3B    | Admin Learning Hub                   | Planned  | [docs/phase-3-workspace.md](docs/phase-3-workspace.md) (Part B) |
 | 4     | Testing, Hardening, and Cost Control | Planned  | [docs/phase-4-robustness.md](docs/phase-4-robustness.md) |
 | 5     | Production Deployment                | Planned  | [docs/phase-5-deployment.md](docs/phase-5-deployment.md) |
 
 Additional reference: [docs/semantic-recognition-testing.md](docs/semantic-recognition-testing.md) records the calibration data for the embedding-based pre-filters.
-
-## Curriculum Coverage
-
-The learning modules (Phase 3) will cover four core topics from the **UCL PHAS0029** Computational Physics course:
-
-- **Linear Algebra**: matrix operations, eigenvalue problems, decompositions
-- **Root-Finding Methods**: bisection, Newton-Raphson, secant method
-- **Numerical Methods for ODEs**: initial value problems (Euler, Runge-Kutta) and boundary value problems (shooting method, finite differences)
-- **Fourier Transforms**: discrete Fourier transform, FFT, spectral analysis
 
 ## Features
 
@@ -52,10 +44,11 @@ The learning modules (Phase 3) will cover four core topics from the **UCL PHAS00
 
 ### Planned (Phase 3 onwards)
 
-- **JupyterLite Workspace**: in-browser Python notebooks (WebAssembly) with no server-side computation required.
-- **Context-Aware Module Tutor**: a tutor panel alongside the notebook that can see the student's code and error output.
+- **JupyterLite Workspace**: users upload their own `.ipynb` files and run Python code in the browser via JupyterLite (WebAssembly). A split-panel layout places the notebook on the left and an AI tutor on the right. The tutor can see the student's current cell code and error output.
+- **Admin Learning Hub**: administrators create public learning zones and upload curated notebooks. All users can browse zones and work through notebooks with AI assistance. Each student's progress is saved independently.
+- **Notebook State Persistence**: auto-save stores the student's notebook state to the backend every 30 seconds. Closing and reopening a notebook restores all edits and outputs.
 - **Rate Limiting and Cost Control**: per-user message rate limits, global LLM call limits, and an admin cost visibility endpoint.
-- **Automated Test Suite**: pytest-based tests covering auth, chat, pedagogy, and module endpoints.
+- **Automated Test Suite**: pytest-based tests covering auth, chat, pedagogy, and notebook endpoints.
 - **Production Deployment**: Docker, Nginx, HTTPS, CI/CD, database backups.
 
 ## Tech Stack
@@ -76,22 +69,24 @@ The learning modules (Phase 3) will cover four core topics from the **UCL PHAS00
 Frontend (React + TypeScript + Vite + Tailwind)
   ├── Auth pages (login, register, profile, change password)
   ├── Chat page (WebSocket, streaming, session sidebar)
-  └── [Phase 3] Module list + Workspace (JupyterLite + Tutor)
+  ├── [Phase 3A] My Notebooks + Workspace (JupyterLite + chat)
+  └── [Phase 3B] Learning Hub (admin zones + public notebook browser)
          │
          │  REST + WebSocket (JWT auth)
          ▼
 Backend (FastAPI, async Python)
   ├── Auth API (JWT access tokens + httpOnly refresh cookies)
   ├── Chat API (REST for sessions/usage, WebSocket for streaming)
-  ├── [Phase 3] Module + Progress API
+  ├── [Phase 3A] Notebook API (upload, list, view, delete)
+  ├── [Phase 3B] Zone API (public browse) + Admin API (zone/notebook management)
   └── AI subsystem
        ├── LLM abstraction (3 providers, retry + fallback)
        ├── Embedding service (Cohere/Voyage, pre-filter pipeline)
        ├── Pedagogy engine (graduated hints, difficulty classification, EMA levels)
-       └── Context builder (system prompt assembly, token-aware compression)
+       └── Context builder (system prompt assembly, notebook + cell context injection)
          │
          ▼
-PostgreSQL (users, chat sessions, messages, daily usage, [Phase 3] modules, progress)
+PostgreSQL (users, sessions, messages, usage, [3A] notebooks, [3B] zones, progress)
 ```
 
 ## Getting Started
@@ -173,4 +168,4 @@ If you have local uncommitted changes, `git pull --ff-only` may stop with an err
 - **Semantic similarity, not hashing.** Same-problem detection uses embedding similarity against the previous Q+A context, which is robust to rephrasing. This replaces the original code-hashing design.
 - **Token storage.** Access tokens are stored in memory. Refresh tokens are stored in httpOnly cookies. On page load, the auth context silently calls the refresh endpoint to restore the session.
 - **LLM robustness.** Each provider retries with exponential backoff on transient errors. If the primary provider fails, the system falls back to the next available provider automatically.
-- **JupyterLite, not JupyterHub.** The notebook environment (Phase 3) runs entirely in the browser via WebAssembly with zero server cost. Limitations include browser memory constraints and some Python libraries being unavailable.
+- **JupyterLite, not JupyterHub.** The notebook environment (Phase 3) runs entirely in the browser via WebAssembly with zero server-side compute. A `postMessage` bridge connects the JupyterLite iframe to the parent page, allowing the tutor to see the student's current cell code and errors in real time. Notebook state is persisted to the backend via auto-save.
