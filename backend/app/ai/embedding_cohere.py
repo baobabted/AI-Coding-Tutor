@@ -26,6 +26,7 @@ Authentication:
 """
 
 import logging
+import base64
 from typing import Optional
 
 import httpx
@@ -78,3 +79,44 @@ class CohereEmbeddingService:
         except Exception as e:
             logger.error("Cohere embedding failed: %s", e)
             return None
+
+    async def embed_image(
+        self, image_bytes: bytes, content_type: str
+    ) -> Optional[list[float]]:
+        """Embed an image using Cohere's multimodal embed model."""
+        image_b64 = base64.b64encode(image_bytes).decode("ascii")
+        data_url = f"data:{content_type};base64,{image_b64}"
+
+        payload_candidates = [
+            {
+                "model": COHERE_MODEL,
+                "input_type": "search_query",
+                "images": [data_url],
+                "embedding_types": ["float"],
+                "output_dimension": 256,
+            },
+            {
+                "model": COHERE_MODEL,
+                "input_type": "search_query",
+                "inputs": [
+                    {
+                        "content": [
+                            {"type": "image", "image": data_url},
+                        ]
+                    }
+                ],
+                "embedding_types": ["float"],
+                "output_dimension": 256,
+            },
+        ]
+
+        for payload in payload_candidates:
+            response = await self._client.post(COHERE_API_URL, json=payload)
+            if response.status_code == 200:
+                data = response.json()
+                vectors = data.get("embeddings", {}).get("float", [])
+                if vectors:
+                    return vectors[0]
+
+        logger.error("Cohere image embedding failed for content type %s", content_type)
+        return None

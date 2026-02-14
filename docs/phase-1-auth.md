@@ -35,16 +35,13 @@ Create the `backend/` directory with the following files.
 class Settings(BaseSettings):
     database_url: str
     jwt_secret_key: str
-    jwt_access_token_expire_minutes: int = 30
-    jwt_refresh_token_expire_days: int = 7
-    cors_origins: list[str] = ["http://localhost:5173"]
-    # LLM keys are loaded here but not used until Phase 2
-    llm_provider: str = "anthropic"
-    anthropic_api_key: str = ""
-    openai_api_key: str = ""
+    jwt_access_token_expire_minutes: int
+    jwt_refresh_token_expire_days: int
+    cors_origins: list[str]
+    # Additional AI and upload settings are also defined here for later phases.
 ```
 
-A single global `settings` instance is created at module level and imported everywhere.
+A single global `settings` instance is created at module level and imported everywhere. Keep all keys from `.env.example` in `.env`, because `config.py` defines structure only and does not hard-code runtime values.
 
 ### 3. Database setup
 
@@ -59,7 +56,7 @@ AsyncSessionLocal = async_sessionmaker(engine, class_=AsyncSession, expire_on_co
 
 `echo=True` logs all SQL queries during development. `expire_on_commit=False` keeps ORM objects usable after a commit without re-querying.
 
-**`backend/app/db/init_db.py`** runs on startup and calls `Base.metadata.create_all()` to create all tables. This is the development approach; in production, Alembic handles migrations.
+**`backend/app/db/init_db.py`** runs on startup and executes `alembic upgrade head`. This keeps the schema aligned with migration history in all environments.
 
 ### 4. User model
 
@@ -75,7 +72,7 @@ AsyncSessionLocal = async_sessionmaker(engine, class_=AsyncSession, expire_on_co
 | `maths_level` | INTEGER | 1 to 5, default 3 |
 | `created_at` | TIMESTAMP | Server default via `func.now()` |
 
-The `Base` class declared here is imported by all other models and by `init_db.py`.
+The `Base` class declared here is imported by all other models and by Alembic metadata loading.
 
 ### 5. User schemas
 
@@ -139,21 +136,21 @@ The refresh token cookie is never exposed to JavaScript. The session survives pa
 
 **`backend/app/main.py`**:
 
-- Creates the FastAPI app with a `lifespan` async context manager. On startup it calls `init_db(engine)` to create tables. On shutdown it calls `engine.dispose()` to close the database connection pool.
+- Creates the FastAPI app with a `lifespan` async context manager. On startup it calls `init_db()` to apply migrations. On shutdown it calls `engine.dispose()` to close the database connection pool.
 - Configures CORS middleware with origins from settings and `allow_credentials=True`.
 - Includes routers required by the current implementation.
 - Provides a `GET /health` endpoint that returns `{"status": "healthy"}` for readiness checks.
 
 ### 10. Alembic migration
 
-For production, create the first migration for the `users` table:
+Create the first migration for the `users` table:
 
 ```bash
 alembic revision --autogenerate -m "create users table"
 alembic upgrade head
 ```
 
-During development, `init_db()` handles table creation on startup, so this step is optional.
+Migrations are the single source of truth for schema changes. `init_db()` runs `alembic upgrade head` at startup, so containers automatically apply pending revisions.
 
 ### 11. Docker Compose
 

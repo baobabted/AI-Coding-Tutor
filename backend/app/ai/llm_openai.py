@@ -5,7 +5,7 @@ from typing import AsyncIterator
 
 import httpx
 
-from app.ai.llm_base import LLMProvider, LLMError
+from app.ai.llm_base import LLMError, LLMMessage, LLMProvider
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +20,7 @@ class OpenAIProvider(LLMProvider):
     async def generate_stream(
         self,
         system_prompt: str,
-        messages: list[dict],
+        messages: list[LLMMessage],
         max_tokens: int = 8192,
     ) -> AsyncIterator[str]:
         """Stream tokens from the OpenAI Chat Completions API.
@@ -48,11 +48,11 @@ class OpenAIProvider(LLMProvider):
         }
 
         # OpenAI uses a "system" role message for system prompts
-        api_messages = [{"role": "system", "content": system_prompt}]
+        api_messages: list[dict] = [{"role": "system", "content": system_prompt}]
         for msg in messages:
             api_messages.append({
                 "role": msg["role"],
-                "content": msg["content"],
+                "content": self._to_openai_content(msg["content"]),
             })
 
         payload = {
@@ -125,3 +125,25 @@ class OpenAIProvider(LLMProvider):
     def count_tokens(self, text: str) -> int:
         """Approximate token count using character heuristic."""
         return max(1, len(text) // 4)
+
+    @staticmethod
+    def _to_openai_content(content: str | list[dict[str, str]]) -> str | list[dict]:
+        if isinstance(content, str):
+            return content
+
+        parts: list[dict] = []
+        for part in content:
+            if part.get("type") == "text":
+                parts.append({"type": "text", "text": part.get("text", "")})
+            elif part.get("type") == "image":
+                media_type = part.get("media_type", "image/png")
+                image_data = part.get("data", "")
+                parts.append(
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:{media_type};base64,{image_data}"
+                        },
+                    }
+                )
+        return parts or [{"type": "text", "text": ""}]

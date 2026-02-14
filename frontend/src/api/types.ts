@@ -40,6 +40,7 @@ export interface ChatMessage {
   id?: string;
   role: "user" | "assistant";
   content: string;
+  attachments?: Attachment[];
   hint_level_used?: number;
   problem_difficulty?: number;
   maths_difficulty?: number;
@@ -59,4 +60,16 @@ export interface TokenUsage {
   daily_input_limit: number;
   daily_output_limit: number;
   usage_percentage: number;
+}
+
+export interface Attachment {
+  id: string;
+  filename: string;
+  content_type: string;
+  file_type: "image" | "document";
+  url: string;
+}
+
+export interface UploadBatchResponse {
+  files: Attachment[];
 }

@@ -1,5 +1,4 @@
 import asyncio
-import os
 from logging.config import fileConfig
 
 from sqlalchemy import pool
@@ -21,10 +20,6 @@ if config.config_file_name is not None:
 
 # Set target metadata from our models
 target_metadata = Base.metadata
-
-# Get database URL from environment
-database_url = os.getenv("DATABASE_URL", "postgresql+asyncpg://postgres:postgres@db:5432/coding_tutor")
-config.set_main_option("sqlalchemy.url", database_url)
 
 
 def run_migrations_offline() -> None:

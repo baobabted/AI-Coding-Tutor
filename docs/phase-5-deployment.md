@@ -204,6 +204,8 @@ All sensitive values are read from the `.env` file. The backend health check use
 
 Current development startup differs slightly: `start.bat` uses `/health` for backend readiness, then runs `python app/ai/verify_keys.py` as a separate verification step before opening the frontend.
 
+Development maintenance also includes `update.bat` (Windows). It fetches and fast-forwards Git, then rebuilds services. It currently runs `docker compose down -v`, so it resets local database volumes. Use it only when you are happy to recreate local data.
+
 ---
 
 ## 4. Optional Environment Variable Validation

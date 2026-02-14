@@ -11,7 +11,10 @@ export function createChatSocket(
   onEvent: (event: WsEvent) => void,
   onOpen?: () => void,
   onClose?: () => void
-): { send: (content: string, sessionId?: string | null) => void; close: () => void } {
+): {
+  send: (content: string, sessionId?: string | null, uploadIds?: string[]) => void;
+  close: () => void;
+} {
   const token = getAccessToken();
   if (!token) {
     onEvent({ type: "error", message: "Not authenticated" });
@@ -48,9 +51,19 @@ export function createChatSocket(
     }
   };
 
-  const send = (content: string, sessionId?: string | null) => {
+  const send = (
+    content: string,
+    sessionId?: string | null,
+    uploadIds?: string[]
+  ) => {
     if (ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ content, session_id: sessionId ?? null }));
+      ws.send(
+        JSON.stringify({
+          content,
+          session_id: sessionId ?? null,
+          upload_ids: uploadIds ?? [],
+        })
+      );
     }
   };
 

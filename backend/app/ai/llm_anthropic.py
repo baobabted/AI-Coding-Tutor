@@ -5,7 +5,7 @@ from typing import AsyncIterator
 
 import httpx
 
-from app.ai.llm_base import LLMProvider, LLMError
+from app.ai.llm_base import LLMError, LLMMessage, LLMProvider
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +20,7 @@ class AnthropicProvider(LLMProvider):
     async def generate_stream(
         self,
         system_prompt: str,
-        messages: list[dict],
+        messages: list[LLMMessage],
         max_tokens: int = 8192,
     ) -> AsyncIterator[str]:
         """Stream tokens from Claude via the Anthropic Messages API."""
@@ -33,7 +33,13 @@ class AnthropicProvider(LLMProvider):
             "model": ANTHROPIC_MODEL,
             "max_tokens": max_tokens,
             "system": system_prompt,
-            "messages": messages,
+            "messages": [
+                {
+                    "role": msg["role"],
+                    "content": self._to_anthropic_content(msg["content"]),
+                }
+                for msg in messages
+            ],
             "stream": True,
         }
 
@@ -99,3 +105,25 @@ class AnthropicProvider(LLMProvider):
     def count_tokens(self, text: str) -> int:
         """Approximate token count using character heuristic."""
         return max(1, len(text) // 4)
+
+    @staticmethod
+    def _to_anthropic_content(content: str | list[dict[str, str]]) -> list[dict]:
+        if isinstance(content, str):
+            return [{"type": "text", "text": content}]
+
+        blocks: list[dict] = []
+        for part in content:
+            if part.get("type") == "text":
+                blocks.append({"type": "text", "text": part.get("text", "")})
+            elif part.get("type") == "image":
+                blocks.append(
+                    {
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "media_type": part.get("media_type", "image/png"),
+                            "data": part.get("data", ""),
+                        },
+                    }
+                )
+        return blocks or [{"type": "text", "text": ""}]

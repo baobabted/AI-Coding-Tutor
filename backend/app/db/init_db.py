@@ -1,10 +1,17 @@
-from sqlalchemy.ext.asyncio import AsyncEngine
+import asyncio
+from pathlib import Path
 
-from app.models.user import Base
-import app.models.chat  # noqa: F401 - register chat tables with Base.metadata
+from alembic import command
+from alembic.config import Config
+
+def _build_alembic_config() -> Config:
+    backend_dir = Path(__file__).resolve().parents[2]
+    cfg = Config(str(backend_dir / "alembic.ini"))
+    cfg.set_main_option("script_location", str(backend_dir / "alembic"))
+    return cfg
 
 
-async def init_db(engine: AsyncEngine) -> None:
-    """Create all database tables."""
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+async def init_db() -> None:
+    """Run Alembic migrations to keep the schema up to date."""
+    cfg = _build_alembic_config()
+    await asyncio.to_thread(command.upgrade, cfg, "head")

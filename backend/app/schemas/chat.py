@@ -3,10 +3,13 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
+from app.schemas.upload import AttachmentOut
+
 
 class ChatMessageIn(BaseModel):
-    content: str = Field(min_length=1, max_length=16000)
+    content: str = Field(default="", max_length=16000)
     session_id: UUID | None = None
+    upload_ids: list[UUID] = Field(default_factory=list, max_length=5)
 
 
 class ChatMessageOut(BaseModel):
@@ -17,6 +20,7 @@ class ChatMessageOut(BaseModel):
     hint_level_used: int | None = None
     problem_difficulty: int | None = None
     maths_difficulty: int | None = None
+    attachments: list[AttachmentOut] = Field(default_factory=list)
     created_at: datetime
 
     class Config:

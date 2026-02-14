@@ -64,7 +64,6 @@ def upgrade() -> None:
         sa.Column("maths_difficulty", sa.Integer(), nullable=True),
         sa.Column("input_tokens", sa.Integer(), nullable=True),
         sa.Column("output_tokens", sa.Integer(), nullable=True),
-        sa.Column("notebook_context", sa.Text(), nullable=True),
         sa.Column(
             "created_at", sa.DateTime(), nullable=True, server_default=sa.text("now()")
         ),

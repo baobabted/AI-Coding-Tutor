@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useAuth } from "../auth/AuthContext";
 import { apiFetch } from "../api/http";
-import { ChatMessage, ChatSession } from "../api/types";
+import { ChatMessage, ChatSession, UploadBatchResponse } from "../api/types";
 import { createChatSocket, WsEvent } from "../api/ws";
 import { ChatMessageList } from "./ChatMessageList";
 import { ChatInput } from "./ChatInput";
@@ -86,13 +86,49 @@ export function ChatPage() {
     };
   }, [handleEvent]);
 
-  const handleSend = (content: string) => {
+  const handleSend = async (content: string, files: File[]) => {
     if (!socketRef.current || isStreaming) return;
 
-    setMessages((msgs) => [...msgs, { role: "user", content }]);
+    let uploadIds: string[] = [];
+    let uploadedAttachments: UploadBatchResponse["files"] = [];
+
+    if (files.length > 0) {
+      const formData = new FormData();
+      for (const file of files) {
+        formData.append("files", file);
+      }
+
+      try {
+        const uploadResponse = await apiFetch<UploadBatchResponse>("/api/upload", {
+          method: "POST",
+          body: formData,
+        });
+        uploadedAttachments = uploadResponse.files;
+        uploadIds = uploadResponse.files.map((item) => item.id);
+      } catch (err) {
+        const message =
+          err instanceof Error ? err.message : "Failed to upload files.";
+        setMessages((msgs) => [
+          ...msgs,
+          { role: "assistant", content: `Error: ${message}` },
+        ]);
+        throw err;
+      }
+    }
+
+    const displayContent =
+      content.trim() || (uploadedAttachments.length > 0 ? "Sent attachments." : "");
+    setMessages((msgs) => [
+      ...msgs,
+      {
+        role: "user",
+        content: displayContent,
+        attachments: uploadedAttachments,
+      },
+    ]);
     setStreamingContent("");
     setIsStreaming(true);
-    socketRef.current.send(content, sessionId);
+    socketRef.current.send(content.trim(), sessionId, uploadIds);
   };
 
   const handleSelectSession = async (id: string) => {

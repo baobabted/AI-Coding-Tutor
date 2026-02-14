@@ -17,7 +17,9 @@ export async function apiFetch<T>(
   if (accessToken) {
     headers.set("Authorization", `Bearer ${accessToken}`);
   }
-  if (!headers.has("Content-Type") && options.body) {
+  const isFormDataBody =
+    typeof FormData !== "undefined" && options.body instanceof FormData;
+  if (!headers.has("Content-Type") && options.body && !isFormDataBody) {
     headers.set("Content-Type", "application/json");
   }
 
@@ -70,6 +72,63 @@ export async function apiFetch<T>(
     return {} as T;
   }
   return JSON.parse(text);
+}
+
+export async function apiFetchBlob(
+  path: string,
+  options: RequestInit = {}
+): Promise<Blob> {
+  const headers = new Headers(options.headers);
+
+  if (accessToken) {
+    headers.set("Authorization", `Bearer ${accessToken}`);
+  }
+  const isFormDataBody =
+    typeof FormData !== "undefined" && options.body instanceof FormData;
+  if (!headers.has("Content-Type") && options.body && !isFormDataBody) {
+    headers.set("Content-Type", "application/json");
+  }
+
+  const response = await fetch(path, {
+    ...options,
+    headers,
+    credentials: "include",
+  });
+
+  const isAuthEndpoint = path.startsWith("/api/auth/login") ||
+                         path.startsWith("/api/auth/register") ||
+                         path.startsWith("/api/auth/refresh");
+
+  if (response.status === 401 && !isAuthEndpoint) {
+    const refreshed = await refreshAccessToken();
+    if (refreshed) {
+      headers.set("Authorization", `Bearer ${accessToken}`);
+      const retryResponse = await fetch(path, {
+        ...options,
+        headers,
+        credentials: "include",
+      });
+      if (!retryResponse.ok) {
+        const error = await retryResponse
+          .json()
+          .catch(() => ({ detail: "Unknown error" }));
+        throw new Error(error.detail || `API error: ${retryResponse.status}`);
+      }
+      return retryResponse.blob();
+    } else {
+      window.location.href = "/login";
+      throw new Error("Session expired");
+    }
+  }
+
+  if (!response.ok) {
+    const error = await response
+      .json()
+      .catch(() => ({ detail: "Unknown error" }));
+    throw new Error(error.detail || `API error: ${response.status}`);
+  }
+
+  return response.blob();
 }
 
 async function refreshAccessToken(): Promise<boolean> {

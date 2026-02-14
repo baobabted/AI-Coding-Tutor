@@ -5,7 +5,7 @@ from typing import AsyncIterator
 
 import httpx
 
-from app.ai.llm_base import LLMProvider, LLMError
+from app.ai.llm_base import LLMError, LLMMessage, LLMProvider
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +20,7 @@ class GoogleGeminiProvider(LLMProvider):
     async def generate_stream(
         self,
         system_prompt: str,
-        messages: list[dict],
+        messages: list[LLMMessage],
         max_tokens: int = 8192,
     ) -> AsyncIterator[str]:
         """Stream tokens from the Gemini API via SSE.
@@ -50,7 +50,7 @@ class GoogleGeminiProvider(LLMProvider):
             role = "model" if msg["role"] == "assistant" else "user"
             contents.append({
                 "role": role,
-                "parts": [{"text": msg["content"]}],
+                "parts": self._to_gemini_parts(msg["content"]),
             })
 
         payload = {
@@ -130,3 +130,23 @@ class GoogleGeminiProvider(LLMProvider):
     def count_tokens(self, text: str) -> int:
         """Approximate token count using character heuristic."""
         return max(1, len(text) // 4)
+
+    @staticmethod
+    def _to_gemini_parts(content: str | list[dict[str, str]]) -> list[dict]:
+        if isinstance(content, str):
+            return [{"text": content}]
+
+        parts: list[dict] = []
+        for part in content:
+            if part.get("type") == "text":
+                parts.append({"text": part.get("text", "")})
+            elif part.get("type") == "image":
+                parts.append(
+                    {
+                        "inline_data": {
+                            "mime_type": part.get("media_type", "image/png"),
+                            "data": part.get("data", ""),
+                        }
+                    }
+                )
+        return parts or [{"text": ""}]

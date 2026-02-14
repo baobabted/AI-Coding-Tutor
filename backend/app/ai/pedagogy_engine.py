@@ -41,6 +41,8 @@ class PedagogyEngine:
         user_message: str,
         student_state: StudentState,
         username: str = "there",
+        embedding_override: list[float] | None = None,
+        enable_topic_filters: bool = True,
     ) -> ProcessResult:
         """Process a user message through the pre-filter pipeline and pedagogy logic.
 
@@ -48,9 +50,11 @@ class PedagogyEngine:
         """
 
         # 1. Embed the user message (single API call)
-        embedding = await self.embedding_service.embed_text(user_message)
+        embedding = embedding_override or await self.embedding_service.embed_text(
+            user_message
+        )
 
-        if embedding:
+        if embedding and enable_topic_filters:
             # 2. Check greeting — synchronous, no API call
             if self.embedding_service.check_greeting(embedding):
                 return ProcessResult(
@@ -173,14 +177,26 @@ class PedagogyEngine:
         )
 
     async def update_context_embedding(
-        self, student_state: StudentState, question: str, answer: str
+        self,
+        student_state: StudentState,
+        question: str,
+        answer: str,
+        question_embedding: list[float] | None = None,
     ) -> None:
         """Embed the concatenated Q+A and store as context for same-problem detection.
 
         Called after each LLM-generated response (not after canned responses).
         The combined text gives richer topic context than the question alone.
         """
-        combined = question + "\n" + answer
-        embedding = await self.embedding_service.embed_text(combined)
+        answer_embedding = await self.embedding_service.embed_text(answer)
+        if question_embedding and answer_embedding:
+            embedding = self.embedding_service.combine_embeddings(
+                [question_embedding, answer_embedding]
+            )
+        elif question_embedding:
+            embedding = question_embedding
+        else:
+            combined = question + "\n" + answer
+            embedding = await self.embedding_service.embed_text(combined)
         if embedding:
             student_state.last_context_embedding = embedding

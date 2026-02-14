@@ -17,7 +17,7 @@
 | ----- | ------------------------------------ | -------- | ----------------------------------------------------- |
 | 1     | Auth System                          | Complete | [docs/phase-1-auth.md](docs/phase-1-auth.md)             |
 | 2A    | AI Chat and Pedagogy Engine          | Complete | [docs/phase-2-chat.md](docs/phase-2-chat.md)             |
-| 2B    | File and Image Uploads               | Planned  | [docs/phase-2-chat.md](docs/phase-2-chat.md) (Section 5) |
+| 2B    | File and Image Uploads               | Complete | [docs/phase-2-chat.md](docs/phase-2-chat.md) (Section 5) |
 | 3     | Learning Modules and Workspace       | Planned  | [docs/phase-3-workspace.md](docs/phase-3-workspace.md)   |
 | 4     | Testing, Hardening, and Cost Control | Planned  | [docs/phase-4-robustness.md](docs/phase-4-robustness.md) |
 | 5     | Production Deployment                | Planned  | [docs/phase-5-deployment.md](docs/phase-5-deployment.md) |
@@ -35,13 +35,17 @@ The learning modules (Phase 3) will cover four core topics from the **UCL PHAS00
 
 ## Features
 
-### Implemented (Phase 1 and 2A)
+### Implemented (Phase 1, 2A, and 2B)
 
 - **Graduated Hints**: the AI tutor escalates from Socratic questions to conceptual nudges, structural outlines, concrete examples, and finally full solutions. A complete answer is never given on the first response.
 - **Adaptive Student Levels**: hidden effective levels (floating-point, 1.0 to 5.0) update dynamically using an exponential moving average after each completed problem. These levels control the communication style independently from the hint level.
 - **Embedding-Based Pre-Filters**: user messages are classified via cosine similarity against pre-embedded anchors before reaching the LLM. Greetings and off-topic messages are handled instantly with no LLM cost. Same-problem detection and elaboration requests control hint escalation.
 - **Three-Provider LLM Failover**: supports Anthropic Claude, Google Gemini, and OpenAI GPT with automatic fallback if the primary provider is unavailable.
 - **Streaming Responses**: AI responses stream token by token over a WebSocket connection.
+- **File and Image Uploads**: users can attach files directly in chat (drag and drop, file picker, or paste screenshots).
+- **Attachment Limits per Message**: up to 3 photos and 2 files per message, with clear validation errors when limits are exceeded.
+- **Document Parsing**: document context is extracted from PDF, TXT, PY, JS, TS, CSV, and IPYNB uploads before LLM generation.
+- **Secure Attachment Access**: uploaded files are served only through authenticated endpoints tied to the current user.
 - **Markdown, Code, and LaTeX Rendering**: assistant messages render with syntax-highlighted code blocks and KaTeX formula display.
 - **Session Persistence**: chat history and skill assessments are saved per user. Sessions survive page refreshes via httpOnly refresh token cookies.
 - **Daily Token Limits**: each user has a daily budget of 50,000 input tokens and 50,000 output tokens, displayed as a usage percentage on the profile page.
@@ -120,6 +124,8 @@ Edit `.env` and set:
 - Your embedding API key (`COHERE_API_KEY` or `VOYAGEAI_API_KEY`).
 - `LLM_PROVIDER` to your preferred provider (`anthropic`, `openai`, or `google`).
 
+Keep all keys from `.env.example` in place. `config.py` defines the settings structure only, so missing keys in `.env` will fail startup.
+
 3. Start the database and backend:
 
 ```bash
@@ -148,6 +154,18 @@ Double-click `start.bat` in the project root. The script:
 - opens your browser and keeps the startup window open for logs.
 
 If startup fails, the script prints container status and recent backend/database logs before exiting.
+
+### One-Click Update (Windows)
+
+Double-click `update.bat` in the project root. The script:
+
+- fetches and fast-forwards local Git history (`git pull --ff-only`);
+- rebuilds database and backend containers;
+- rebuilds the database from scratch via `docker compose down -v` (this removes local DB data);
+- runs frontend dependency updates (`npm install`); and
+- prints current container status at the end.
+
+If you have local uncommitted changes, `git pull --ff-only` may stop with an error. Resolve that first, then rerun `update.bat`.
 
 ## Key Design Decisions
 

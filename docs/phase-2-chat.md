@@ -363,6 +363,8 @@ The complete pipeline for each user message:
 - Multimodal embedding for uploaded content (using the configured embedding provider).
 - Vision-capable LLM processing for screenshots and images.
 - Updated chat interface with upload controls, drag-and-drop, and clipboard paste.
+- Per-message attachment limits: up to 3 photos and 2 files.
+- Support for `.ipynb` documents, with text extraction from notebook cells.
 
 ---
 
@@ -406,7 +408,7 @@ Index on `(user_id, session_type)`.
 | `maths_difficulty` | INTEGER | Nullable, 1 to 5 (maths difficulty at time of response) |
 | `input_tokens` | INTEGER | Nullable, token count of the user's input |
 | `output_tokens` | INTEGER | Nullable, token count of the AI's response |
-| `notebook_context` | TEXT | Nullable (used in Phase 3) |
+| `attachments_json` | TEXT | Nullable JSON array of uploaded file IDs for user messages |
 | `created_at` | TIMESTAMP | Server default |
 
 Index on `(session_id, created_at)` for efficient history retrieval.
@@ -427,24 +429,25 @@ Unique index on `(user_id, date)`.
 
 **`backend/app/schemas/chat.py`:**
 
-- `ChatMessageIn`: content (str), notebook_context (optional str).
-- `ChatMessageOut`: id, role, content, hint_level_used, created_at.
-- `ChatSessionOut`: id, session_type, created_at, messages (list).
-- `TokenUsageOut`: percentage_used (float, 0 to 100).
+- `ChatMessageIn`: `content` (str), `session_id` (optional UUID), `upload_ids` (list of UUID, up to 5 per message payload).
+- `ChatMessageOut`: `id`, `session_id`, `role`, `content`, `hint_level_used`, `problem_difficulty`, `maths_difficulty`, `attachments`, `created_at`.
+- `ChatSessionOut`: `id`, `session_type`, `created_at`.
+- `ChatSessionListItem`: `id`, `preview`, `created_at`.
+- `TokenUsageOut`: `date`, input/output token usage, daily limits, and `usage_percentage`.
 
 ### 4.3 Chat Service
 
 **`backend/app/services/chat_service.py`:**
 
-- `create_session(user_id, session_type, module_id=None) -> ChatSession`
-- `get_or_create_session(user_id, session_type, module_id=None) -> ChatSession` returns the most recent active session, or creates a new one.
-- `add_message(session_id, role, content, hint_level=None, problem_difficulty=None, input_tokens=None, output_tokens=None)`
-- `get_chat_history(session_id) -> list[dict]` returns all messages for a session in chronological order. All turns are preserved in the database; the context builder handles token budget and compression.
-- `get_user_sessions(user_id) -> list[dict]` returns all sessions for the user, newest first, each with a preview (first 80 characters of the first user message).
-- `delete_session(user_id, session_id)` deletes a session and all its messages (CASCADE).
-- `get_daily_usage(user_id) -> DailyTokenUsage` returns or creates today's usage record.
-- `increment_token_usage(user_id, input_tokens, output_tokens)` adds tokens to both daily counters.
-- `check_daily_limit(user_id) -> bool` returns True if the user is within both daily limits (input and output).
+- `get_or_create_session(db, user_id, session_id=None) -> ChatSession`: reuses an existing session when provided and owned by the user, otherwise creates a new general session.
+- `save_message(...) -> ChatMessage`: stores user/assistant turns with metadata (`hint_level_used`, difficulty values, token usage, and optional attachment IDs).
+- `get_chat_history(db, session_id) -> list[dict]`: loads chronological role/content history for context building.
+- `get_session_messages(db, user_id, session_id) -> list[dict] | None`: ownership-checked history endpoint payload, including resolved attachment metadata.
+- `get_user_sessions(db, user_id) -> list[dict]`: newest-first session list with a first-message preview.
+- `delete_session(db, user_id, session_id) -> bool`: deletes a session and its messages.
+- `get_daily_usage(db, user_id) -> DailyTokenUsage`: returns or creates today's usage row.
+- `increment_token_usage(db, user_id, input_tokens, output_tokens)`: updates daily counters.
+- `check_daily_limit(db, user_id) -> bool`: enforces separate input/output daily budgets.
 
 ### 4.4 LLM Abstraction Layer (Three-Model Failover)
 
@@ -500,53 +503,41 @@ def get_llm_provider(settings) -> LLMProvider:
 
 ### 4.5 Token Management and Daily Limits
 
-**There are no per-message token limits.** Individual messages are not capped, so AI responses are never truncated mid-answer. The only constraint is the daily budget.
+The chat flow enforces two levels of token control:
 
-**Daily limits per user: 50,000 input tokens and 50,000 output tokens (separate budgets).**
+1. **Per-message input guard.** The backend rejects oversized turns before LLM generation.
+2. **Per-day user budget.** Each user has separate input and output daily limits.
 
-Typical usage falls well below these thresholds. Standard student inputs range between 500 and 1,500 tokens, so the input budget supports approximately 30 detailed questions with code or over 100 shorter text questions. Output token consumption depends on the nature of each question but is conservatively allocated at the same level. These calculations assume inputs contain substantial code and that both input and output are in English.
+**Per-message input guard (`LLM_MAX_USER_INPUT_TOKENS`):**
 
-The daily limit resets at midnight UTC.
+- The backend builds an enriched user message (typed text plus extracted document text).
+- It estimates input tokens with the active provider's `count_tokens`.
+- Each attached image adds an extra fixed budget (`+512`) for multimodal cost estimation.
+- If total input tokens exceed `LLM_MAX_USER_INPUT_TOKENS` (default `6000`), the message is rejected with:
+  - `"Files are too large for one message. Please split them and try again."`
 
-**How it works:**
+**Daily limits per user:**
 
-1. Before processing a message, the system checks the user's `daily_token_usage` record for today.
-2. If the user has exceeded either limit (input or output), the message is rejected with a friendly notice: "You have reached your daily usage limit. Your allowance resets at midnight UTC."
-3. After processing, both the input token count and the output token count are added to their respective daily totals.
+- `USER_DAILY_INPUT_TOKEN_LIMIT` (default `50000`)
+- `USER_DAILY_OUTPUT_TOKEN_LIMIT` (default `50000`)
 
-**Display in user profile:**
+**How daily limits work:**
 
-The profile page shows a progress bar labelled "Daily usage: X% used". The actual token counts and limits are not shown to the student. The displayed percentage is whichever is higher of input usage or output usage:
+1. Before handling a turn, the backend checks today's usage row.
+2. If either input or output budget is already exhausted, it returns:
+   - `"Daily token limit reached. Try again tomorrow."`
+3. After each successful LLM response, both counters are incremented.
 
-```
-input_pct = (input_tokens_used / 50000) * 100
-output_pct = (output_tokens_used / 50000) * 100
-display_pct = max(input_pct, output_pct)
-```
+**Display in profile:**
 
-A REST endpoint `GET /api/chat/usage` returns the usage data.
+`GET /api/chat/usage` returns raw usage and a single `usage_percentage`, calculated from the higher of input/output percentage and capped at 100%.
 
 **Context window management:**
 
-All conversation turns are preserved in the database. The context window has a budget of 10,000 tokens. When building the LLM context:
-
-1. Calculate tokens for the system prompt and the current user message.
-2. Load all messages from the current session.
-3. If the full history fits within the token budget, include everything.
-4. If the total exceeds 80% of the budget (8,000 tokens), trigger automatic context compression:
-   - Split the history into older messages (to compress) and recent messages (to keep).
-   - Use the LLM to summarise the older messages into a concise paragraph (2-3 sentences).
-   - Include the summary as a context note at the start, followed by the recent messages and the current message.
-5. If compression is not needed but the history still exceeds the budget, keep as many recent messages as fit (simple truncation fallback).
-
-The compression cost (LLM call for summarisation) is a system overhead and is not charged to the student's daily limit.
-
-**Configurable limits in `config.py`:**
-
-- `LLM_MAX_CONTEXT_TOKENS`: 10000.
-- `CONTEXT_COMPRESSION_THRESHOLD`: 0.8 (compress when context exceeds 80% of limit).
-- `USER_DAILY_INPUT_TOKEN_LIMIT`: 50000.
-- `USER_DAILY_OUTPUT_TOKEN_LIMIT`: 50000.
+- `LLM_MAX_CONTEXT_TOKENS` controls the maximum context budget (default `10000`).
+- `CONTEXT_COMPRESSION_THRESHOLD` controls when summarisation starts (default `0.8`).
+- Older history is summarised first; recent turns are kept intact.
+- If summarisation fails, the system falls back to recent-message truncation.
 
 ### 4.6 Pedagogy Engine Implementation
 
@@ -616,18 +607,16 @@ async def build_context_messages(
     user_message: str,
     llm: LLMProvider,
     max_context_tokens: int,
-    max_input_tokens: int,
     compression_threshold: float = 0.8,
 ) -> list[dict]:
     """
     Build a token-aware message list with automatic compression.
 
-    1. Truncate the current user message if it exceeds max_input_tokens.
-    2. Calculate total tokens for the full chat history.
-    3. If total tokens < threshold (80% of budget): include all messages.
-    4. If above threshold: compress older messages into a summary using the LLM.
+    1. Calculate total tokens for the full chat history.
+    2. If total tokens < threshold (80% of budget): include all messages.
+    3. If above threshold: compress older messages into a summary using the LLM.
        Keep the most recent messages intact. Prepend the summary as context.
-    5. Fallback: if compression fails, use simple truncation (most recent messages only).
+    4. Fallback: if compression fails, use simple truncation (most recent messages only).
     """
 ```
 
@@ -650,39 +639,43 @@ The compression function sends the older messages to the LLM with a short summar
 
 1. Client connects with JWT as query parameter: `/ws/chat?token=<access_token>`.
 2. Backend validates the token. On failure, closes the connection with code 4001.
-3. Backend loads or creates a chat session for the user.
-4. Backend loads the student state from the user profile.
-5. On each message from the client:
-    1. Parse the JSON message (`{content, session_id}`).
-    2. Check daily limit (both input and output). Reject if either is exceeded.
-    3. Run the pre-filter pipeline (greeting, topic relevance, same-problem detection).
-    4. If filtered (greeting or off-topic), send the canned response directly. No LLM call.
-    5. Otherwise, update student state (hint level, problem tracking).
-    6. Count input tokens. Build the prompt via context builder (with compression if needed).
-    7. Call the LLM via `get_llm_provider()`.
-    8. Stream tokens to the client as JSON: `{"type": "token", "content": "..."}`.
-    9. On completion, send `{"type": "done", "hint_level": N}`.
-    10. Store both user and assistant messages in the database with metadata.
-    11. Update daily token usage (both input and output tokens).
-6. On disconnect, clean up.
+3. Backend initialises embedding + pedagogy services and builds student state from the profile.
+4. On each message from the client:
+    1. Parse the JSON payload: `{content, session_id, upload_ids}`.
+    2. Validate upload ID count and UUID format.
+    3. Check daily token budget.
+    4. Resolve uploads for the current user only, and ignore expired or inaccessible files.
+    5. Split uploads into images/documents and enforce per-message mix limits.
+    6. Build enriched user text (plain message + extracted document text).
+    7. Estimate input tokens; reject if over `LLM_MAX_USER_INPUT_TOKENS`.
+    8. Build combined embeddings (text + images) for semantics.
+    9. Persist the user turn with optional attachment IDs.
+    10. Run pedagogy processing:
+        - no attachments: greeting/off-topic/same-problem checks are enabled;
+        - with attachments: greeting/off-topic checks are skipped, then same-problem logic continues.
+    11. If filtered, send a canned response and store it.
+    12. Otherwise, build prompt + context, stream LLM tokens, and send a `done` event with hint and difficulty metadata.
+    13. Persist the assistant turn, update daily usage, and write effective levels back to `users`.
+5. On disconnect, clean up.
 
-**Connection limits:** Each user can have at most 3 concurrent WebSocket connections (to handle multiple tabs without excessive resource use). Enforced via an in-memory dictionary tracking active connections per user ID. Extra connections are rejected with code 4002.
+The current implementation does not enforce a per-user concurrent WebSocket connection cap.
 
 ### 4.10 Frontend: WebSocket Helper
 
 **`frontend/src/api/ws.ts`:**
 
 ```typescript
-function connectWebSocket(
-  path: string,
-  token: string,
-  onToken: (text: string) => void,
-  onDone: (hintLevel: number) => void,
-  onError: (error: string) => void,
-): { send: (msg: object) => void; close: () => void }
+function createChatSocket(
+  onEvent: (event: WsEvent) => void,
+  onOpen?: () => void,
+  onClose?: () => void
+): {
+  send: (content: string, sessionId?: string | null, uploadIds?: string[]) => void;
+  close: () => void;
+}
 ```
 
-Handles automatic reconnection: up to 3 attempts with exponential backoff on unexpected disconnect.
+The helper forwards server events (`session`, `token`, `done`, `canned`, `error`) and sends message payloads with optional `session_id` and `upload_ids`.
 
 ### 4.11 Frontend: Chat Page
 
@@ -764,21 +757,31 @@ A common pattern among students learning to code is taking a screenshot of their
 Accepts multipart form data with:
 
 - Images: PNG, JPG, JPEG, GIF, WebP (max 5 MB each).
-- Documents: PDF, TXT, PY, JS, TS, CSV (max 2 MB each).
+- Documents: PDF, TXT, PY, JS, TS, CSV, IPYNB (max 2 MB each).
 
-Returns a reference ID that can be included in subsequent chat messages.
+Per-message limits are enforced when attachments are sent in chat:
 
-Uploaded files are stored temporarily and cleaned up after 24 hours.
+- up to 3 photos;
+- up to 2 document files.
+
+`POST /api/upload` returns attachment references (`id`, `filename`, `content_type`, `file_type`, `url`) which can be included in the next WebSocket message via `upload_ids`.
+
+`GET /api/upload/{upload_id}/content` (authenticated) serves preview/download content for the same user only.
+
+Uploaded files are temporary and include an expiry timestamp (default 24 hours).
 
 ### 5.3 Multimodal Processing
 
 When a chat message includes uploaded files:
 
-1. **Images:** Sent directly to the LLM's vision endpoint (Claude, Gemini, and GPT-5.2 all support image input). The image is also embedded via the configured embedding provider for same-problem detection and difficulty estimation. Both Cohere `embed-v4.0` and Voyage AI `voyage-multimodal-3.5` handle text and images in the same vector space, which is critical for understanding code screenshots and error messages.
-
-2. **Documents:** Text content is extracted and included in the message context. PDFs and code files are parsed to plain text. The extracted text is embedded via the configured embedding provider for filtering and similarity comparison.
-
-3. **Cross-modal similarity:** Because both embedding models produce embeddings in the same vector space for text and images, meaningful comparisons are possible between a typed question and a screenshot of the same problem. A student who types "How do I fix this IndexError?" and then uploads a screenshot of the same error will correctly trigger same-problem detection.
+1. **Images:** Read from temporary storage and sent to the LLM as base64 image parts in the final user message payload.
+2. **Documents:** Text is extracted and appended to the user message as contextual content:
+   - PDF via `pypdf`,
+   - plain/code files via text decoding,
+   - `.ipynb` by reading notebook JSON and concatenating cell sources.
+3. **Token guard:** The enriched message is checked against `LLM_MAX_USER_INPUT_TOKENS`; oversized turns are rejected before LLM calls.
+4. **Multimodal semantics:** Text and image embeddings are merged into one combined vector for same-problem detection and difficulty flow.
+5. **Filter behaviour with attachments:** greeting/off-topic filters are skipped for attachment messages so uploaded learning material is always treated as tutoring context.
 
 ### 5.4 Updated Chat Interface
 
@@ -788,12 +791,13 @@ When a chat message includes uploaded files:
 - Show file previews (image thumbnails or file names) before sending.
 - Support drag-and-drop onto the chat input area.
 - Support paste from clipboard (Ctrl+V) for screenshots.
-- Allow up to 3 files per message.
+- Enforce attachment limits per message: up to 3 photos and 2 files.
 
 **`frontend/src/chat/ChatBubble.tsx`** (updated for Part B):
 
 - Render attached images inline within user messages.
-- Show document attachments as clickable file links.
+- Show document attachments as clickable download buttons.
+- Load attachment content through authenticated blob fetches instead of public URLs.
 
 ---
 
@@ -801,8 +805,8 @@ When a chat message includes uploaded files:
 
 ### Part A: Text-Based Chat
 
-- [ ] Opening the chat page for the first time shows a personalised welcome: "Hello {username}! How can I help you today?"
-- [ ] The AI disclaimer "AI coding tutor may make mistakes. Please verify its responses." is visible below the input area.
+- [ ] Opening the chat page for the first time shows a personalised welcome addressed to the current username.
+- [ ] The disclaimer "AI responses may contain errors. Always verify important information independently." is visible below the input area.
 - [ ] Opening the chat page establishes a WebSocket connection (visible in browser dev tools).
 - [ ] Sending a message produces a streamed AI response (tokens appear one by one).
 - [ ] The AI's first response to any new topic is never a complete answer.
@@ -821,15 +825,17 @@ When a chat message includes uploaded files:
 - [ ] Exceeding the daily token limit shows a friendly usage limit notice.
 - [ ] The profile page shows a "Daily usage: X% used" progress bar.
 - [ ] The actual token limit number is not visible anywhere in the UI.
-- [ ] Opening more than 3 tabs with the chat page causes extra connections to be rejected with a clear message.
 
 ### Part B: File and Image Uploads
 
 - [ ] The upload button (paperclip icon) appears next to the text input.
 - [ ] Dragging an image onto the chat input area shows a preview.
 - [ ] Pasting a screenshot via Ctrl+V attaches it to the current message.
-- [ ] Sending an image with a question produces a relevant AI response that references the image content.
+- [ ] Per-message attachment limits are enforced as 3 photos and 2 files.
 - [ ] Uploading a code file (e.g. `.py`) includes its content in the AI context.
+- [ ] Uploading an `.ipynb` file includes notebook cell text in the AI context.
 - [ ] Same-problem detection works across text and image inputs (e.g. a typed question followed by a screenshot of the same code).
 - [ ] Files exceeding the size limit are rejected with a clear message.
+- [ ] Oversized attachment messages (token limit) are rejected with "Files are too large for one message. Please split them and try again."
+- [ ] Expired attachment references are rejected with a clear error.
 - [ ] Unsupported file types are rejected with a clear message.

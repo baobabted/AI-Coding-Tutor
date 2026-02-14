@@ -171,6 +171,26 @@ class EmbeddingService:
             return result[0]
         return None
 
+    async def embed_image(
+        self, image_bytes: bytes, content_type: str
+    ) -> Optional[list[float]]:
+        """Return an embedding vector for an image attachment."""
+        try:
+            if hasattr(self._provider, "embed_image"):
+                result = await self._provider.embed_image(image_bytes, content_type)
+                if result:
+                    return result
+        except Exception as e:
+            logger.warning("Primary image embedding provider failed: %s", e)
+
+        if self._fallback and hasattr(self._fallback, "embed_image"):
+            try:
+                return await self._fallback.embed_image(image_bytes, content_type)
+            except Exception as e:
+                logger.error("Fallback image embedding provider failed: %s", e)
+
+        return None
+
     def _put_cache(self, key: str, embedding: list[float]) -> None:
         """Insert into cache, evicting oldest entry if full."""
         if len(self._cache) >= self._cache_max:
@@ -187,7 +207,10 @@ class EmbeddingService:
         """
         if self._greeting_embeddings is None:
             return False
-        return _max_similarity(self._greeting_embeddings, np.array(embedding)) > 0.75
+        vector = np.array(embedding)
+        if self._greeting_embeddings.shape[1] != vector.shape[0]:
+            return False
+        return _max_similarity(self._greeting_embeddings, vector) > 0.75
 
     def check_off_topic(self, embedding: list[float]) -> bool:
         """Check if the embedding is off-topic.
@@ -196,7 +219,10 @@ class EmbeddingService:
         """
         if self._topic_embeddings is None:
             return False
-        return _max_similarity(self._topic_embeddings, np.array(embedding)) < 0.30
+        vector = np.array(embedding)
+        if self._topic_embeddings.shape[1] != vector.shape[0]:
+            return False
+        return _max_similarity(self._topic_embeddings, vector) < 0.30
 
     def check_same_problem(
         self, current_embedding: list[float], previous_embedding: list[float]
@@ -206,9 +232,11 @@ class EmbeddingService:
         Compares current message embedding against previous Q+A context embedding.
         Calibrated for Cohere embed-v4.0 (256d).
         """
-        return _cosine_similarity(
-            np.array(current_embedding), np.array(previous_embedding)
-        ) > 0.35
+        current = np.array(current_embedding)
+        previous = np.array(previous_embedding)
+        if current.shape != previous.shape:
+            return False
+        return _cosine_similarity(current, previous) > 0.35
 
     def check_elaboration_request(self, embedding: list[float]) -> bool:
         """Check if the message is a generic elaboration request.
@@ -219,8 +247,33 @@ class EmbeddingService:
         """
         if self._elaboration_embeddings is None:
             return False
-        return _max_similarity(self._elaboration_embeddings, np.array(embedding)) > 0.50
+        vector = np.array(embedding)
+        if self._elaboration_embeddings.shape[1] != vector.shape[0]:
+            return False
+        return _max_similarity(self._elaboration_embeddings, vector) > 0.50
 
     @staticmethod
     def cosine_similarity(vec_a: list[float], vec_b: list[float]) -> float:
-        return _cosine_similarity(np.array(vec_a), np.array(vec_b))
+        array_a = np.array(vec_a)
+        array_b = np.array(vec_b)
+        if array_a.shape != array_b.shape:
+            return 0.0
+        return _cosine_similarity(array_a, array_b)
+
+    @staticmethod
+    def combine_embeddings(vectors: list[list[float]]) -> list[float] | None:
+        """Average vectors into one embedding for multimodal comparisons."""
+        if not vectors:
+            return None
+
+        arrays = [np.array(vec) for vec in vectors if vec]
+        if not arrays:
+            return None
+
+        dimension = arrays[0].shape[0]
+        compatible = [arr for arr in arrays if arr.shape[0] == dimension]
+        if not compatible:
+            return None
+
+        merged = np.mean(np.vstack(compatible), axis=0)
+        return merged.tolist()

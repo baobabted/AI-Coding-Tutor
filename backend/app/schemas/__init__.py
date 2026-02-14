@@ -6,6 +6,8 @@ from app.schemas.user import (
     ChangePassword,
     TokenResponse,
 )
+from app.schemas.chat import ChatMessageIn, ChatMessageOut, ChatSessionOut, TokenUsageOut
+from app.schemas.upload import AttachmentOut, UploadBatchOut
 
 __all__ = [
     "UserCreate",
@@ -14,4 +16,10 @@ __all__ = [
     "UserProfileUpdate",
     "ChangePassword",
     "TokenResponse",
+    "ChatMessageIn",
+    "ChatMessageOut",
+    "ChatSessionOut",
+    "TokenUsageOut",
+    "AttachmentOut",
+    "UploadBatchOut",
 ]
